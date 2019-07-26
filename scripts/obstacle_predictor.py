@@ -24,9 +24,6 @@ class ObstaclePredictor:
         self.base_frame = rospy.get_param("/obstacle_predictor/base_frame_id")
         self.costmap_topic = rospy.get_param("/obstacle_predictor/costmap_topic")
         self.obstacle_topic = rospy.get_param("/obstacle_predictor/obstacle_topic")
-        teststring = self.global_frame[1:] \
-            if self.global_frame[0]=='/' else self.global_frame
-        print 'Test:', teststring
 
         # Initialize ros node
         rospy.init_node('obstacle_predictor', anonymous=True)
