@@ -1,0 +1,15 @@
+<launch>
+
+  <arg name="global_frame_id" default="/map"/>
+  <arg name="base_frame_id"   default="/base_footprint"/>
+  <arg name="costmap_topic"   default="/move_base/local_costmap/costmap"/>
+  <arg name="obstacle_topic"  default="/move_base/TebLocalPlanner/obstacles"/>
+
+  <node pkg="obstacle_predictor" type="obstacle_predictor.py" name="obstacle_predictor"  output="screen">
+    <param name="global_frame_id" value="$(arg global_frame_id)"/>
+    <param name="base_frame_id"   value="$(arg base_frame_id)"/>
+    <param name="costmap_topic"   value="$(arg costmap_topic)"/>
+    <param name="obstacle_topic"  value="$(arg obstacle_topic)"/>
+  </node>
+
+</launch>
