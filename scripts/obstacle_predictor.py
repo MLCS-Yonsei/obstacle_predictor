@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from copy import copy
+from scipy import signal # 7.31 add
 
 import rospy
 from nav_msgs.msg import OccupancyGrid
@@ -58,6 +60,10 @@ class ObstaclePredictor:
         # Compute opticalFlowLK here.
         # previous image: self.prev_costmap_msg
         # current image: costmap_msg
+        # 7.31 add
+        # window_size = 3
+        # opt_uv = opticalFlowLK(self.prev_costmap_msg, costmap_msg, window_size) # opt_uv = (u, v)
+
 
 
         # generate obstacle_msg for TebLocalPlanner here.
@@ -95,12 +101,43 @@ class ObstaclePredictor:
         v2.x = -0.5
         v2.y = -1.5
         v3 = Point32()
-	v3.x = 0
+        v3.x = 0
         v3.y = -1
         obstacle_msg.obstacles[2].polygon.points = [v1, v2, v3]
 
         self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
 
+
+    def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
+ 
+        kernel_x = np.array([[-1., 1.], [-1., 1.]])
+        kernel_y = np.array([[-1., -1.], [1., 1.]])
+        kernel_t = np.array([[1., 1.], [1., 1.]])#*.25
+        w = window_size / 2 # window_size is odd, all the pixels with offset in between [-w, w] are inside the window
+        I1g = I1g / 255. # normalize pixels
+        I2g = I2g / 255. # normalize pixels
+        # Implement Lucas Kanade
+        # for each point, calculate I_x, I_y, I_t
+        mode = 'same'
+        fx = signal.convolve2d(I1g, kernel_x, boundary='symm', mode=mode)
+        fy = signal.convolve2d(I1g, kernel_y, boundary='symm', mode=mode)
+        ft = signal.convolve2d(I2g, kernel_t, boundary='symm', mode=mode) + signal.convolve2d(I1g, -kernel_t, boundary='symm', mode=mode)
+        u = np.zeros(I1g.shape)
+        v = np.zeros(I1g.shape)
+        # within window window_size * window_size
+        for i in range(w, I1g.shape[0]-w):
+            for j in range(w, I1g.shape[1]-w):
+                Ix = fx[i-w:i+w+1, j-w:j+w+1].flatten()
+                Iy = fy[i-w:i+w+1, j-w:j+w+1].flatten()
+                It = ft[i-w:i+w+1, j-w:j+w+1].flatten()
+                b = -It # Av = b <- Ix*u+Iy*v+It = 0
+                A = np.stack([Ix, Iy], axis = 1) # 8.1 add. Ix & Iy are columns.
+                # if threshold τ is larger than the smallest eigenvalue of A'A:
+                nu = np.matmul(np.linalg.pinv(A), b) # v = (A'A)^-1 * (-A'It)
+                u[i,j]=nu[0]
+                v[i,j]=nu[1]
+ 
+        return (u,v)
 
 
 if __name__ == '__main__':
