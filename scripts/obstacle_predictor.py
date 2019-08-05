@@ -71,8 +71,10 @@ class ObstaclePredictor:
         window_size = 3
         opt_uv = opticalFlowLK(I1g, I2g, window_size) # opt_uv = (u, v)
 	
-	    # Compute obstacle velocity
-	    dt = costmap_msg.header.stamp - self.prev_costmap_msg.header.stamp
+        # Compute obstacle velocity
+        dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
+        if dt < 1e-4:
+            dt = 0.1
         robot_vel = (
             (costmap_msg.info.origin.position.x - self.prev_costmap_msg.info.origin.position.x)/dt,
             (costmap_msg.info.origin.position.y - self.prev_costmap_msg.info.origin.position.y)/dt
