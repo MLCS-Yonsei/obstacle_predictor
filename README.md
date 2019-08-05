@@ -1,5 +1,5 @@
 # obstacle_predictor
-
+Predict the velocity of dynamic obstalces using local cost-map optical flow.
 
 ## Requirements
 https://github.com/rst-tu-dortmund/costmap_converter.git
