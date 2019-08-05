@@ -33,7 +33,7 @@ class ObstaclePredictor:
         rospy.init_node('obstacle_predictor', anonymous=True)
 
         # Costmap buffer
-        self.prev_costmap_msg = OccupancyGrid()
+        self.prev_costmap_msg = None
 
         # Publisher and subscriber
         self.costmap_sub = rospy.Subscriber(self.costmap_topic, OccupancyGrid, self.costmapCallback)
@@ -60,8 +60,10 @@ class ObstaclePredictor:
     def publish_obstacles(self, costmap_msg):	#TODO
 
         # Compute opticalFlowLK here.
+        if type(self.prev_costmap_msg.data) = type(None):
+            self.prev_costmap_msg.data = copy(costmap_msg)
         I1g = np.reshape(
-        self.prev_costmap_msg.data,
+            self.prev_costmap_msg.data,
             [self.prev_costmap_msg.info.height, self.prev_costmap_msg.info.width]
         )
         I2g = np.reshape(costmap_msg.data, [costmap_msg.info.height, costmap_msg.info.width])
