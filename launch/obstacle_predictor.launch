@@ -6,6 +6,7 @@
   <arg name="obstacle_topic"  default="/move_base/TebLocalPlannerROS/obstacles"/>
   <arg name="prediction_horizon"  default="1.0"/>
   <arg name="movement_tolerence"  default="0.1"/>
+  <arg name="window_size"  default="3"/>
 
   <node pkg="obstacle_predictor" type="obstacle_predictor.py" name="obstacle_predictor"  output="screen">
     <param name="global_frame_id" value="$(arg global_frame_id)"/>
@@ -14,6 +15,7 @@
     <param name="obstacle_topic"  value="$(arg obstacle_topic)"/>
     <param name="prediction_horizon"  value="$(arg prediction_horizon)"/>
     <param name="movement_tolerence"  value="$(arg movement_tolerence)"/>
+    <param name="window_size"  value="$(arg window_size)"/>
   </node>
 
 </launch>
