@@ -60,7 +60,7 @@ class ObstaclePredictor:
     def publish_obstacles(self, costmap_msg):	#TODO
 
         # Compute opticalFlowLK here.
-        if type(self.prev_costmap_msg.data) == type(OccupancyGrid()):
+        if type(self.prev_costmap_msg) == type(OccupancyGrid()):
             I1g = np.reshape(
                 self.prev_costmap_msg.data,
                 [self.prev_costmap_msg.info.height, self.prev_costmap_msg.info.width]
@@ -72,7 +72,7 @@ class ObstaclePredictor:
 	
             # Compute obstacle velocity
             dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
-            if dt < 1e-4:
+            if dt < 1e-4:  # catch div by zero
                 dt = 0.1
             robot_vel = (
                 (costmap_msg.info.origin.position.x - self.prev_costmap_msg.info.origin.position.x)/dt,
@@ -104,7 +104,7 @@ class ObstaclePredictor:
                             costmap_msg.info.resolution * obstacle_vels[0][i, j] / obstacle_speed,
                             costmap_msg.info.resolution * obstacle_vels[1][i, j] / obstacle_speed
                         )
-                        for k in range(num_position):
+                        for k in range(num_points): # num_position -> num_points
                             obstacle_msg.obstacles.append(ObstacleMsg())
                             obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
                             obstacle_msg.obstacles[-1].polygon.points = [Point32()]

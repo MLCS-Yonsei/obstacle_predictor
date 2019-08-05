@@ -12,6 +12,7 @@
     <param name="base_frame_id"   value="$(arg base_frame_id)"/>
     <param name="costmap_topic"   value="$(arg costmap_topic)"/>
     <param name="obstacle_topic"  value="$(arg obstacle_topic)"/>
+    <param name="prediction_horizon"  value="$(arg prediction_horizon)"/>
     <param name="movement_tolerence"  value="$(arg movement_tolerence)"/>
   </node>
 
