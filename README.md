@@ -17,3 +17,4 @@ roslaunch obstacle_predictor obstacle_predictor.launch
 - ```obstacle_topic```: Topic name of the obstacle message to publish. (default: ```/move_base/TebLocalPlanner/obstacles```)
 - ```prediction_horizon```: Time horizon for generating predicted obstacles. (default: ```1.0```)
 - ```movement_tolerence```: If speed of some dynamic obstacles is slower than this parameter, those obstacles will be ignored. (default: ```0.1```)
+- ```window_size```: Window size for Lucas-Kanade optical flow. (default: ```3```)
