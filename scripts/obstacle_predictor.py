@@ -28,6 +28,7 @@ class ObstaclePredictor:
         self.obstacle_topic = rospy.get_param("/obstacle_predictor/obstacle_topic")
         self.prediction_horizon = rospy.get_param("/obstacle_predictor/prediction_horizon")
         self.tol = rospy.get_param("/obstacle_predictor/movement_tolerence")
+        self.window_size = rospy.get_param("/obstacle_predictor/window_size")
 
         # Initialize ros node
         rospy.init_node('obstacle_predictor', anonymous=True)
@@ -67,8 +68,7 @@ class ObstaclePredictor:
             )
             I2g = np.reshape(costmap_msg.data, [costmap_msg.info.height, costmap_msg.info.width])
             # 7.31 add
-            window_size = 3
-            opt_uv = opticalFlowLK(I1g, I2g, window_size) # opt_uv = (u, v)
+            opt_uv = opticalFlowLK(I1g, I2g, self.window_size) # opt_uv = (u, v)
 	
             # Compute obstacle velocity
             dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
