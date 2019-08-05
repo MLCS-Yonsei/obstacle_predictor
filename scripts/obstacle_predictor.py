@@ -96,8 +96,8 @@ class ObstaclePredictor:
                         if obstacle_speed > self.tol:
                             num_points = int(round(obstacle_speed * self.prediction_horizon / costmap_msg.info.resolution))
                             flow_vector_position = (
-                                costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+window_size/2),
-                                costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+window_size/2)
+                                costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+self.window_size/2),
+                                costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+self.window_size/2)
                             )
                             normalized_vel = (
                                 costmap_msg.info.resolution * (obstacle_vels[0][i, j]-robot_vel[0]) / obstacle_speed,
