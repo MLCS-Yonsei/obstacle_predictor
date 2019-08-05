@@ -3,9 +3,9 @@
   <arg name="global_frame_id" default="/map"/>
   <arg name="base_frame_id"   default="/base_footprint"/>
   <arg name="costmap_topic"   default="/move_base/local_costmap/costmap"/>
-  <arg name="obstacle_topic"  default="/move_base/TebLocalPlanner/obstacles"/>
-  <arg name="prediction_horizon"  default="3.0"/>
-  <arg name="movement_tolerence"  default="0.05"/>
+  <arg name="obstacle_topic"  default="/move_base/TebLocalPlannerROS/obstacles"/>
+  <arg name="prediction_horizon"  default="1.0"/>
+  <arg name="movement_tolerence"  default="0.1"/>
 
   <node pkg="obstacle_predictor" type="obstacle_predictor.py" name="obstacle_predictor"  output="screen">
     <param name="global_frame_id" value="$(arg global_frame_id)"/>

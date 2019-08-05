@@ -72,47 +72,47 @@ class ObstaclePredictor:
 	
             # Compute obstacle velocity
             dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
-            if dt < 1e-4:  # catch div by zero
-                dt = 0.1
-            robot_vel = (
-                (costmap_msg.info.origin.position.x - self.prev_costmap_msg.info.origin.position.x)/dt,
-                (costmap_msg.info.origin.position.y - self.prev_costmap_msg.info.origin.position.y)/dt
-            )
-            obstacle_vels = (
-                opt_uv[0]/dt - robot_vel[0],
-                opt_uv[1]/dt - robot_vel[1]
-            )
+            if dt < 1.0: # skip opticalflow when dt is larger than 1 sec.
+                robot_vel = (
+                    (costmap_msg.info.origin.position.x - self.prev_costmap_msg.info.origin.position.x)/dt,
+                    (costmap_msg.info.origin.position.y - self.prev_costmap_msg.info.origin.position.y)/dt
+                )
+                obstacle_vels = (  # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
+                    opt_uv[0].T/dt * costmap_msg.info.resolution,
+                    opt_uv[1].T/dt * costmap_msg.info.resolution
+                )
 
 
-            # Generate obstacle_msg for TebLocalPlanner here.
-            obstacle_msg = ObstacleArrayMsg()
-            obstacle_msg.header.stamp = rospy.Time.now()
-            obstacle_msg.header.frame_id = self.global_frame[1:] \
-                if self.global_frame[0]=='/' else self.global_frame
+                # Generate obstacle_msg for TebLocalPlanner here.
+                obstacle_msg = ObstacleArrayMsg()
+                obstacle_msg.header.stamp = rospy.Time.now()
+                obstacle_msg.header.frame_id = self.global_frame[1:] \
+                    if self.global_frame[0]=='/' else self.global_frame
 
-            for i in range(obstacle_vels[0].shape[0]):
-                for j in range(obstacle_vels[0].shape[1]):
-                    # Add point obstacle to the message if obstacle speed is larger than tolerance.
-                    obstacle_speed = np.linalg.norm([obstacle_vels[0][i, j] + obstacle_vels[1][i, j]])
-                    if obstacle_speed > self.tol:
-                        num_points = int(round(obstacle_speed * self.prediction_horizon / costmap_msg.info.resolution))
-                        flow_vector_position = (
-                            costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+window_size/2),
-                            costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+window_size/2)
-    	                )
-                        normalized_vel = (
-                            costmap_msg.info.resolution * obstacle_vels[0][i, j] / obstacle_speed,
-                            costmap_msg.info.resolution * obstacle_vels[1][i, j] / obstacle_speed
-                        )
-                        for k in range(num_points): # num_position -> num_points
-                            obstacle_msg.obstacles.append(ObstacleMsg())
-                            obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
-                            obstacle_msg.obstacles[-1].polygon.points = [Point32()]
-                            obstacle_msg.obstacles[-1].polygon.points[0].x = flow_vector_position[0] + normalized_vel[0]*(k+1)
-                            obstacle_msg.obstacles[-1].polygon.points[0].y = flow_vector_position[1] + normalized_vel[1]*(k+1)
-                        obstacle_msg.obstacles[-1].polygon.points[0].z = 0
+                for i in range(obstacle_vels[0].shape[0]):
+                    for j in range(obstacle_vels[0].shape[1]):
+                        # Add point obstacle to the message if obstacle speed is larger than tolerance.
+                        obstacle_speed = np.linalg.norm([obstacle_vels[0][i, j] + obstacle_vels[1][i, j]])
+                        if obstacle_speed > self.tol:
+                            num_points = int(round(obstacle_speed * self.prediction_horizon / costmap_msg.info.resolution))
+                            flow_vector_position = (
+                                costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+window_size/2),
+                                costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+window_size/2)
+                            )
+                            normalized_vel = (
+                                costmap_msg.info.resolution * (obstacle_vels[0][i, j]-robot_vel[0]) / obstacle_speed,
+                                costmap_msg.info.resolution * (obstacle_vels[1][i, j]-robot_vel[1]) / obstacle_speed
+                            )
+                            if normalized_vel > self.tol:
+                                for k in range(num_points): # num_position -> num_points
+                                    obstacle_msg.obstacles.append(ObstacleMsg())
+                                    obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
+                                    obstacle_msg.obstacles[-1].polygon.points = [Point32()]
+                                    obstacle_msg.obstacles[-1].polygon.points[0].x = flow_vector_position[0] + normalized_vel[0]*(k+1)
+                                    obstacle_msg.obstacles[-1].polygon.points[0].y = flow_vector_position[1] + normalized_vel[1]*(k+1)
+                                    obstacle_msg.obstacles[-1].polygon.points[0].z = 0
 
-            self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
+                self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
 
 
 def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
