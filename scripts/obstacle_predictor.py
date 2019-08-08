@@ -58,9 +58,15 @@ class ObstaclePredictor:
     def globalCostmapCallback(self, msg):
 
         self.global_costmap_msg = copy(msg)   # Save current costmap to buffer
+        self.global_costmap_msg.data = np.reshape(
+            self.global_costmap_msg.data,
+            [msg.info.height, msg.info.width]
+        )
 
 
     def localCostmapCallback(self, msg):
+
+        self.resize_and_mask_costmap(msg)
 
         self.publish_obstacles(msg)
         self.prev_local_costmap_msg = copy(msg)   # Save current costmap to buffer
@@ -68,16 +74,10 @@ class ObstaclePredictor:
 
     def publish_obstacles(self, costmap_msg):
 
-        # Check costmap buffers.
-        if isOccupancyGrid(self.global_costmap_msg) and isOccupancyGrid(self.prev_local_costmap_msg):
+        if isOccupancyGrid(self.global_costmap_msg) and isOccupancyGrid(self.prev_local_costmap_msg): # Check costmap buffers.
+
             # Compute opticalFlowLK here.
-            I1g = np.reshape(
-                self.prev_costmap_msg.data,
-                [self.prev_costmap_msg.info.height, self.prev_costmap_msg.info.width]
-            )
-            I2g = np.reshape(costmap_msg.data, [costmap_msg.info.height, costmap_msg.info.width])
-            # 7.31 add
-            flow = opticalFlowLK(I1g, I2g, self.window_size) # opt_uv = (u, v)
+            flow = opticalFlowLK(self.prev_local_costmap_msg, costmap_msg, self.window_size)
 	
             # Compute obstacle velocity
             dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
@@ -122,34 +122,32 @@ class ObstaclePredictor:
         ''' End of function ObstaclePredictor.publish_obstacles '''
 
 
-    def generate_mask(self, loc,glo,resolution):
-        if glo.data.shape[0]%2 + glo.data.shape[1]%2 + loc.data.shape[0]%2 + loc.data.shape[1]%2 != 0:
-            raise ValueError
+    def resize_and_mask_costmap(self, costmap_msg):
+        '''
+        Resize costmap data to 2D array and mask static obstacles.
+        '''
 
-        glo_temp = np.zeros((loc.data.shape[1],loc.data.shape[0]))
-        loc_x = loc.info.origin.position.x
-        loc_y = loc.info.origin.position.y
-        glo_x = glo.info.origin.position.x
-        glo_y = glo.info.origin.position.y
+        costmap_msg.data = np.reshape(
+            costmap_msg.data,
+            [costmap_msg.info.height, costmap_msg.info.width]
+        )
 
-        robot_displacement = np.array([(loc_x - glo_x),(loc_y - glo_y)])/resolution
-        x = int(round(robot_displacement[0]))
-        y = int(round(robot_displacement[1]))
+        dx = costmap_msg.info.origin.position.x - self.global_costmap.info.origin.position.x
+        dy = costmap_msg.info.origin.position.y - self.global_costmap.info.origin.position.y
 
-        if x+loc.data.shape[0] > glo.data.shape[0]:
-            if y+loc.data.shape[1] > glo.data.shape[1]:
-                glo_temp[0:glo.data.shape[1]-y,0:glo.data.shape[0]-x] = glo.data[y:glo.data.shape[1],x:glo.data.shape[0]]
-            else:
-                glo_temp[:,0:glo.data.shape[0]-x] = glo.data[y:y+loc.data.shape[1],x:glo.data.shape[0]]
-        else:
-            if y+loc.data.shape[1] > glo.data.shape[1]:
-                glo_temp[0:glo.data.shape[1]-y,:] = glo.data[y:glo.data.shape[1],x:x+loc.data.shape[0]]
-            else:
-                glo_temp = glo.data[y:y+loc.data.shape[1],x:x+loc.data.shape[0]]
+        multiplier = float(costmap_msg.info.resolution)/float(self.global_costmap_msg.info.resolution)
 
-        glo.data = glo_temp
+        di = int(round(dx/self.global_costmap_msg.info.resolution))
+        dj = int(round(dy/self.global_costmap_msg.info.resolution))
 
-        return glo
+        mask = cv2.resize(
+            self.global_costmap_msg.data[
+                di:di+int(round(costmap_msg.info.height*multiplier)),
+                dj:dj+int(round(costmap_msg.info.width*multiplier))
+            ],
+            dsize=(costmap_msg.info.height, costmap_msg.info.width)
+        )
+        costmap_msg.data[mask!=0] = 0
 
 
     ''' End of class ObstaclePredictor '''
@@ -188,6 +186,7 @@ def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
 
 
 def isOccupancyGrid(msg):
+    ''' Return False if msg is not an OccupancyGrid class. '''
 
     return type(msg) == type(OccupancyGrid())
 
