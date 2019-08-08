@@ -1,4 +1,4 @@
-global_costmap:
+costmap:
   global_frame: map
   robot_base_frame: base_footprint
   update_frequency: 20.0
