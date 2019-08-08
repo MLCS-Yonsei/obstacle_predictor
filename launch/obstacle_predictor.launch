@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <launch>
 
   <arg name="global_frame_id"       default="/map"/>
@@ -8,10 +9,13 @@
   <arg name="prediction_horizon"    default="1.0"/>
   <arg name="movement_tolerence"    default="0.1"/>
   <arg name="window_size"           default="3"/>
+  <arg name="use_sim_time"          default="true"/>
 
-  <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true">
+  <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true" ns="obstacle_predictor" >
     <rosparam file="$(find obstacle_predictor)/params/costmap_common_params.yaml" command="load" ns="global_costmap" />
-    <rosparam file="$(find obstacle_predictor)/params/global_costmap_params.yaml" command="load" ns="costmap" />
+    <rosparam file="$(find obstacle_predictor)/params/global_costmap_params.yaml" command="load" />
+    <param name="publish_frequency" type="double" value="20.0" />
+    <param name="/use_sim_time" value="$(arg use_sim_time)"/>
   </node>
   
   <node pkg="obstacle_predictor" type="obstacle_predictor.py" name="obstacle_predictor"  output="screen">
