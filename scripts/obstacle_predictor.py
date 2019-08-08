@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from copy import copy
-from scipy import signal # 7.31 add
+from scipy import signal, interpolate
 
 import rospy
 from nav_msgs.msg import OccupancyGrid
@@ -24,7 +24,8 @@ class ObstaclePredictor:
         # ROS parameters
         self.global_frame = rospy.get_param("/obstacle_predictor/global_frame_id")
         self.base_frame = rospy.get_param("/obstacle_predictor/base_frame_id")
-        self.costmap_topic = rospy.get_param("/obstacle_predictor/costmap_topic")
+        self.global_costmap_topic = rospy.get_param("/obstacle_predictor/global_costmap_topic")
+        self.local_costmap_topic = rospy.get_param("/obstacle_predictor/local_costmap_topic")
         self.obstacle_topic = rospy.get_param("/obstacle_predictor/obstacle_topic")
         self.prediction_horizon = rospy.get_param("/obstacle_predictor/prediction_horizon")
         self.tol = rospy.get_param("/obstacle_predictor/movement_tolerence")
@@ -34,10 +35,12 @@ class ObstaclePredictor:
         rospy.init_node('obstacle_predictor', anonymous=True)
 
         # Costmap buffer
-        self.prev_costmap_msg = None
+        self.prev_local_costmap_msg = None
+        self.global_costmap_msg = None
 
         # Publisher and subscriber
-        self.costmap_sub = rospy.Subscriber(self.costmap_topic, OccupancyGrid, self.costmapCallback)
+        self.global_costmap_sub = rospy.Subscriber(self.global_costmap_topic, OccupancyGrid, self.globalCostmapCallback)
+        self.local_costmap_sub = rospy.Subscriber(self.local_costmap_topic, OccupancyGrid, self.localCostmapCallback)
         self.obstacle_pub = rospy.Publisher(self.obstacle_topic, ObstacleArrayMsg, queue_size=10)
 
 
@@ -52,23 +55,29 @@ class ObstaclePredictor:
                 self.rate.sleep()
 
 
-    def costmapCallback(self, costmap_msg):
+    def globalCostmapCallback(self, msg):
 
-        self.publish_obstacles(costmap_msg)
-        self.prev_costmap_msg = copy(costmap_msg)   # Save current costmap to buffer
+        self.global_costmap_msg = copy(msg)   # Save current costmap to buffer
 
 
-    def publish_obstacles(self, costmap_msg):	#TODO
+    def localCostmapCallback(self, msg):
 
-        # Compute opticalFlowLK here.
-        if type(self.prev_costmap_msg) == type(OccupancyGrid()):
+        self.publish_obstacles(msg)
+        self.prev_local_costmap_msg = copy(msg)   # Save current costmap to buffer
+
+
+    def publish_obstacles(self, costmap_msg):
+
+        # Check costmap buffers.
+        if isOccupancyGrid(self.global_costmap_msg) and isOccupancyGrid(self.prev_local_costmap_msg):
+            # Compute opticalFlowLK here.
             I1g = np.reshape(
                 self.prev_costmap_msg.data,
                 [self.prev_costmap_msg.info.height, self.prev_costmap_msg.info.width]
             )
             I2g = np.reshape(costmap_msg.data, [costmap_msg.info.height, costmap_msg.info.width])
             # 7.31 add
-            opt_uv = opticalFlowLK(I1g, I2g, self.window_size) # opt_uv = (u, v)
+            flow = opticalFlowLK(I1g, I2g, self.window_size) # opt_uv = (u, v)
 	
             # Compute obstacle velocity
             dt = costmap_msg.header.stamp.to_sec() - self.prev_costmap_msg.header.stamp.to_sec()
@@ -77,11 +86,7 @@ class ObstaclePredictor:
                     (costmap_msg.info.origin.position.x - self.prev_costmap_msg.info.origin.position.x)/dt,
                     (costmap_msg.info.origin.position.y - self.prev_costmap_msg.info.origin.position.y)/dt
                 )
-                obstacle_vels = (  # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-                    opt_uv[0].T/dt * costmap_msg.info.resolution,
-                    opt_uv[1].T/dt * costmap_msg.info.resolution
-                )
-
+                obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
 
                 # Generate obstacle_msg for TebLocalPlanner here.
                 obstacle_msg = ObstacleArrayMsg()
@@ -89,10 +94,10 @@ class ObstaclePredictor:
                 obstacle_msg.header.frame_id = self.global_frame[1:] \
                     if self.global_frame[0]=='/' else self.global_frame
 
-                for i in range(obstacle_vels[0].shape[0]):
-                    for j in range(obstacle_vels[0].shape[1]):
+                for i in range(obstacle_vels.shape[0]):
+                    for j in range(obstacle_vels.shape[1]):
                         # Add point obstacle to the message if obstacle speed is larger than tolerance.
-                        obstacle_speed = np.linalg.norm([obstacle_vels[0][i, j] + obstacle_vels[1][i, j]])
+                        obstacle_speed = np.linalg.norm([obstacle_vels[i, j, 0] + obstacle_vels[i, j, 1]])
                         if obstacle_speed > self.tol:
                             num_points = int(round(obstacle_speed * self.prediction_horizon / costmap_msg.info.resolution))
                             flow_vector_position = (
@@ -100,8 +105,8 @@ class ObstaclePredictor:
                                 costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+self.window_size/2)
                             )
                             normalized_vel = (
-                                costmap_msg.info.resolution * (obstacle_vels[0][i, j]-robot_vel[0]) / obstacle_speed,
-                                costmap_msg.info.resolution * (obstacle_vels[1][i, j]-robot_vel[1]) / obstacle_speed
+                                costmap_msg.info.resolution * (obstacle_vels[i, j, 0]-robot_vel[0]) / obstacle_speed,
+                                costmap_msg.info.resolution * (obstacle_vels[i, j, 1]-robot_vel[1]) / obstacle_speed
                             )
                             if normalized_vel > self.tol:
                                 for k in range(num_points): # num_position -> num_points
@@ -113,6 +118,42 @@ class ObstaclePredictor:
                                     obstacle_msg.obstacles[-1].polygon.points[0].z = 0
 
                 self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
+
+        ''' End of function ObstaclePredictor.publish_obstacles '''
+
+
+    def generate_mask(self, loc,glo,resolution):
+        if glo.data.shape[0]%2 + glo.data.shape[1]%2 + loc.data.shape[0]%2 + loc.data.shape[1]%2 != 0:
+            raise ValueError
+
+        glo_temp = np.zeros((loc.data.shape[1],loc.data.shape[0]))
+        loc_x = loc.info.origin.position.x
+        loc_y = loc.info.origin.position.y
+        glo_x = glo.info.origin.position.x
+        glo_y = glo.info.origin.position.y
+
+        robot_displacement = np.array([(loc_x - glo_x),(loc_y - glo_y)])/resolution
+        x = int(round(robot_displacement[0]))
+        y = int(round(robot_displacement[1]))
+
+        if x+loc.data.shape[0] > glo.data.shape[0]:
+            if y+loc.data.shape[1] > glo.data.shape[1]:
+                glo_temp[0:glo.data.shape[1]-y,0:glo.data.shape[0]-x] = glo.data[y:glo.data.shape[1],x:glo.data.shape[0]]
+            else:
+                glo_temp[:,0:glo.data.shape[0]-x] = glo.data[y:y+loc.data.shape[1],x:glo.data.shape[0]]
+        else:
+            if y+loc.data.shape[1] > glo.data.shape[1]:
+                glo_temp[0:glo.data.shape[1]-y,:] = glo.data[y:glo.data.shape[1],x:x+loc.data.shape[0]]
+            else:
+                glo_temp = glo.data[y:y+loc.data.shape[1],x:x+loc.data.shape[0]]
+
+        glo.data = glo_temp
+
+        return glo
+
+
+    ''' End of class ObstaclePredictor '''
+
 
 
 def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
@@ -129,8 +170,7 @@ def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
     fx = signal.convolve2d(I1g, kernel_x, boundary='symm', mode=mode)
     fy = signal.convolve2d(I1g, kernel_y, boundary='symm', mode=mode)
     ft = signal.convolve2d(I2g, kernel_t, boundary='symm', mode=mode) + signal.convolve2d(I1g, -kernel_t, boundary='symm', mode=mode)
-    u = np.zeros(I1g.shape)
-    v = np.zeros(I1g.shape)
+    uv = np.zeros(I1g.shape + [2])
     # within window window_size * window_size
     for i in range(w, I1g.shape[0]-w):
         for j in range(w, I1g.shape[1]-w):
@@ -141,10 +181,15 @@ def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
             A = np.stack([Ix, Iy], axis = 1) # 8.1 add. Ix & Iy are columns.
             # if threshold τ is larger than the smallest eigenvalue of A'A:
             nu = np.matmul(np.linalg.pinv(A), b) # v = (A'A)^-1 * (-A'It)
-            u[i,j]=nu[0]
-            v[i,j]=nu[1]
+            uv[i, j, 0]=nu[0]
+            uv[i, j, 1]=nu[1]
  
-    return (u,v)
+    return uv    # [August 8, 19:46] Return changed: (ndarray(nx,ny), ndarray(nx,ny)) -> ndarray(nx,ny,2) 
+
+
+def isOccupancyGrid(msg):
+
+    return type(msg) == type(OccupancyGrid())
 
 
 if __name__ == '__main__':
