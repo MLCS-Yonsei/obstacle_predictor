@@ -44,15 +44,8 @@ class ObstaclePredictor:
         self.obstacle_pub = rospy.Publisher(self.obstacle_topic, ObstacleArrayMsg, queue_size=10)
 
 
-    def spin(self, rate=None):
-        if type(rate)==type(None):
-            rospy.spin()
-        else:
-            self.rate = rospy.Rate(rate)
-            while not rospy.is_shutdown():
-                costmap_msg = rospy.wait_for_message(costmap_topic, OccupancyGrid)
-                self.costmapCallback(costmap_msg)
-                self.rate.sleep()
+    def spin(self):
+        rospy.spin()
 
 
     def globalCostmapCallback(self, msg):
@@ -76,15 +69,15 @@ class ObstaclePredictor:
                 # Compute opticalFlowLK here.
                 dt = msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
                 if dt < 1.0: # skip opticalflow when dt is larger than 1 sec.
-                    flow = opticalFlowLK(self.prev_local_costmap_msg.data, msg.data, self.window_size)
+                    flow, rep_physics = opticalFlowLK(self.prev_local_costmap_msg.data, msg.data, self.window_size)
             
                     # Generate and Publish ObstacleArrayMsg
-                    self.publish_obstacles(msg, dt, flow)
+                    self.publish_obstacles(msg, dt, flow, rep_physics)
 
             self.prev_local_costmap_msg = copy(msg)   # Save current costmap to buffer
 
 
-    def publish_obstacles(self, costmap_msg, dt, flow):
+    def publish_obstacles(self, costmap_msg, dt, flow, rep_physics):
 
         robot_vel = (
             (costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x)/dt,
@@ -169,6 +162,10 @@ def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
     ft = signal.convolve2d(I2g, kernel_t, boundary='symm', mode=mode) + signal.convolve2d(I1g, -kernel_t, boundary='symm', mode=mode)
     uv = np.zeros([I1g.shape[0], I1g.shape[1], 2])
     # within window window_size * window_size
+    rep_x_list = []
+    rep_y_list = []
+    u_list = []
+    v_list = []
     for i in range(w, I1g.shape[0]-w):
         for j in range(w, I1g.shape[1]-w):
             Ix = fx[i-w:i+w+1, j-w:j+w+1].flatten()
@@ -178,10 +175,21 @@ def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
             A = np.stack([Ix, Iy], axis = 1) # 8.1 add. Ix & Iy are columns.
             # if threshold τ is larger than the smallest eigenvalue of A'A:
             nu = np.matmul(np.linalg.pinv(A), b) # v = (A'A)^-1 * (-A'It)
-            uv[i, j, 0]=nu[0]
-            uv[i, j, 1]=nu[1]
+            if 0.3<np.linalg.norm(nu)<1.1:
+                uv[i, j, 0] = nu[0]
+                uv[i, j, 1] =-nu[1]
+                u_list.append(nu[0])
+                v_list.append(nu[1])
+                rep_x_list.append(j)
+                rep_y_list.append(i)
+                #print(i,j)
+
+    rep_x = np.average(rep_x_list)
+    rep_y = np.average(rep_y_list)
+    rep_u = np.average(u_list)
+    rep_v = np.average(v_list)
  
-    return uv    # [August 8, 19:46] Return changed: (ndarray(nx,ny), ndarray(nx,ny)) -> ndarray(nx,ny,2) 
+    return uv, [rep_x,rep_y,rep_u,-rep_v]   # [August 8, 19:46] Return changed: (ndarray(nx,ny), ndarray(nx,ny)) -> ndarray(nx,ny,2) 
 
 
 def isOccupancyGrid(msg):
