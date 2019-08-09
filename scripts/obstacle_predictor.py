@@ -6,6 +6,7 @@ from scipy import signal, interpolate
 
 import rospy
 from nav_msgs.msg import OccupancyGrid
+from map_msgs.msg import OccupancyGridUpdate
 from geometry_msgs.msg import PolygonStamped, Point32
 try:
     from costmap_converter.msg import ObstacleArrayMsg, ObstacleMsg
@@ -36,12 +37,23 @@ class ObstaclePredictor:
         rospy.init_node('obstacle_predictor', anonymous=True)
 
         # Costmap buffer
-        self.prev_local_costmap_msg = None
         self.global_costmap_msg = None
+        self.local_costmap_msg = None
+        self.prev_local_costmap_msg = None
 
         # Publisher and subscriber
         self.global_costmap_sub = rospy.Subscriber(self.global_costmap_topic, OccupancyGrid, self.globalCostmapCallback)
         self.local_costmap_sub = rospy.Subscriber(self.local_costmap_topic, OccupancyGrid, self.localCostmapCallback)
+        self.global_costmap_update_sub = rospy.Subscriber(
+            self.global_costmap_topic+'_updates',
+            OccupancyGridUpdate,
+            self.globalCostmapUpdateCallback
+        )
+        self.local_costmap_update_sub = rospy.Subscriber(
+            self.local_costmap_topic+'_updates',
+            OccupancyGridUpdate,
+            self.localCostmapUpdateCallback
+        )
         self.obstacle_pub = rospy.Publisher(self.obstacle_topic, ObstacleArrayMsg, queue_size=10)
 
 
@@ -51,40 +63,65 @@ class ObstaclePredictor:
 
     def globalCostmapCallback(self, msg):
         '''
-        Save corrent global costmap to buffer
+        Save current global costmap to buffer
         '''
         self.global_costmap_msg = reshapeCostmap(msg)
 
 
     def localCostmapCallback(self, msg):
         '''
+        Save current local costmap to buffer
+        '''
+        if isOccupancyGrid(self.global_costmap_msg):
+            self.local_costmap_msg = reshapeCostmap(msg)
+            self.mask_costmap(self.local_costmap_msg)
+            self.predict_velocities()
+
+
+    def globalCostmapUpdateCallback(self, msg):
+        '''
+        Update global costmap buffer
+        '''
+        if isOccupancyGrid(self.global_costmap_msg):
+            updateCostmap(self.global_costmap_msg, msg)
+
+
+    def localCostmapUpdateCallback(self, msg):
+        '''
+        Update local costmap buffer
+        '''
+        if isOccupancyGrid(self.local_costmap_msg) and isOccupancyGrid(self.global_costmap_msg):
+            updateCostmap(self.local_costmap_msg, msg)
+            self.mask_costmap(self.local_costmap_msg)
+            self.predict_velocities()
+
+
+    def predict_velocities(self):
+        '''
         Compute optical flow of local costmap to predict velocities of moving obstacles.
         Predicted velocities will be used for generating ObstacleArrayMsg for TebLocalPlannerROS.
         '''
-        if isOccupancyGrid(self.global_costmap_msg):
-            msg = reshapeCostmap(msg)
-            self.mask_costmap(msg)
+        if isOccupancyGrid(self.prev_local_costmap_msg):
+            # Compute opticalFlowLK here.
+            dt = self.local_costmap_msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
+            if dt >0.05 and dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
+                I1g, I2g = self.preprocess_images()
+                flow, rep_physics = opticalFlowLK(I1g, I2g, self.window_size)
+        
+                # Generate and Publish ObstacleArrayMsg
+                self.publish_obstacles(flow, dt)
 
-            if isOccupancyGrid(self.prev_local_costmap_msg):
-                # Compute opticalFlowLK here.
-                dt = msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
-                if dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
-                    I1g, I2g = self.preprocess_images(msg)
-                    flow, rep_physics = opticalFlowLK(I1g, I2g, self.window_size)
-            
-                    # Generate and Publish ObstacleArrayMsg
-                    self.publish_obstacles(msg, dt, flow, rep_physics)
-
-            self.prev_local_costmap_msg = copy(msg)   # Save current costmap to buffer
+                # Save current costmap to buffer
+                self.prev_local_costmap_msg = copy(self.local_costmap_msg)
 
 
-    def publish_obstacles(self, costmap_msg, dt, flow, rep_physics):
+    def publish_obstacles(self, flow, dt):
         '''
         Generate and publish ObstacleArrayMsg from flow vectors.
         '''
-        obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-        obstacle_vels[:, :, 0][costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
-        obstacle_vels[:, :, 1][costmap_msg.data.T==0] = 0
+        obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * self.local_costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
+        obstacle_vels[:, :, 0][self.local_costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
+        obstacle_vels[:, :, 1][self.local_costmap_msg.data.T==0] = 0
 
         # Generate obstacle_msg for TebLocalPlanner here.
         obstacle_msg = ObstacleArrayMsg()
@@ -98,8 +135,8 @@ class ObstaclePredictor:
                 obstacle_speed = np.linalg.norm([obstacle_vels[i, j, 0] + obstacle_vels[i, j, 1]])
                 if obstacle_speed > self.movement_tol:
                     flow_vector_position = (
-                        costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+0.5),
-                        costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+0.5)
+                        self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution*(i+0.5),
+                        self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution*(j+0.5)
                     )
                     obstacle_msg.obstacles.append(ObstacleMsg())
                     obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
@@ -136,35 +173,35 @@ class ObstaclePredictor:
         costmap_msg.data[mask > 0] = 0
 
 
-    def preprocess_images(self, costmap_msg):
+    def preprocess_images(self):
         '''
         Preprocess images for optical flow.
         Match the location of current costmap and previous costmap.
         '''
-        w = costmap_msg.info.width
-        h = costmap_msg.info.height
-        dx = costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x
-        dy = costmap_msg.info.origin.position.y - self.prev_local_costmap_msg.info.origin.position.y
+        w = self.local_costmap_msg.info.width
+        h = self.local_costmap_msg.info.height
+        dx = self.local_costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x
+        dy = self.local_costmap_msg.info.origin.position.y - self.prev_local_costmap_msg.info.origin.position.y
 
-        di = int(round(dy/costmap_msg.info.resolution))
-        dj = int(round(dx/costmap_msg.info.resolution))
+        di = int(round(dy/self.local_costmap_msg.info.resolution))
+        dj = int(round(dx/self.local_costmap_msg.info.resolution))
 
         img_prev = np.zeros_like(self.prev_local_costmap_msg.data)
-        img_curr = np.zeros_like(costmap_msg.data)
+        img_curr = np.zeros_like(self.local_costmap_msg.data)
         if di < 0:
             if dj < 0:
                 img_prev[-di:h, -dj:w] = self.prev_local_costmap_msg.data[:h+di, :w+dj]
-                img_curr[-di:h, -dj:w] = costmap_msg.data[-di:h, -dj:w]
+                img_curr[-di:h, -dj:w] = self.local_costmap_msg.data[-di:h, -dj:w]
             else:
                 img_prev[-di:h, :w-dj] = self.prev_local_costmap_msg.data[:h+di, dj:w]
-                img_curr[-di:h, :w-dj] = costmap_msg.data[-di:h, :w-dj]
+                img_curr[-di:h, :w-dj] = self.local_costmap_msg.data[-di:h, :w-dj]
         else:
             if dj < 0:
                 img_prev[:h-di, -dj:w] = self.prev_local_costmap_msg.data[di:h, :w+dj]
-                img_curr[:h-di, -dj:w] = costmap_msg.data[:h-di, -dj:w]
+                img_curr[:h-di, -dj:w] = self.local_costmap_msg.data[:h-di, -dj:w]
             else:
                 img_prev[:h-di, :w-dj] = self.prev_local_costmap_msg.data[di:h, dj:w]
-                img_curr[:h-di, :w-dj] = costmap_msg.data[:h-di, :w-dj]
+                img_curr[:h-di, :w-dj] = self.local_costmap_msg.data[:h-di, :w-dj]
         
         return img_prev, img_curr
 
@@ -227,16 +264,31 @@ def isOccupancyGrid(msg):
     return type(msg) == type(OccupancyGrid())
 
 
+def isOccupancyGridUpdate(msg):
+    '''
+    Return False if msg is not an OccupancyGridUpdate class.
+    '''
+    return type(msg) == type(OccupancyGridUpdate())
+
+
 def reshapeCostmap(msg):
     '''
     Reshape, remove negative values and change type as uint8 (for cv2.resize)
     '''
-    temp = copy(msg)
-    temp.data = np.reshape(
+    msg.data = np.reshape(
         msg.data,
         [msg.info.height, msg.info.width]
     ).clip(0).astype(np.uint8)
-    return temp
+    return msg
+
+
+def updateCostmap(costmap_msg, update_msg):
+    temp = copy(costmap_msg)
+    temp.header.stamp = update_msg.header.stamp
+    temp.info.width = update_msg.width
+    temp.info.height = update_msg.height
+    temp.data = update_msg.data
+    costmap_msg = reshapeCostmap(temp)
 
 
 if __name__ == '__main__':
