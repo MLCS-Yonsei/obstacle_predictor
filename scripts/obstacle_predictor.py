@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from copy import copy
-from scipy import signal, interpolate
+from scipy import signal
 from scipy.ndimage.filters import gaussian_filter
 
 import rospy
@@ -40,7 +40,7 @@ class ObstaclePredictor:
         # Costmap buffer
         self.global_costmap_msg = None
         self.local_costmap_msg = None
-        self.prev_local_costmap_msg = None
+        self.prev_DBSCAN_result = None
 
         # Publisher and subscriber
         self.global_costmap_sub = rospy.Subscriber(self.global_costmap_topic, OccupancyGrid, self.globalCostmapCallback)
@@ -101,61 +101,41 @@ class ObstaclePredictor:
 
     def predict_velocities(self):
         '''
-        Compute optical flow of local costmap to predict velocities of moving obstacles.
+        Predict velocities of moving obstacles.
         Predicted velocities will be used for generating ObstacleArrayMsg for TebLocalPlannerROS.
         '''
-        if isOccupancyGrid(self.prev_local_costmap_msg):
-            # Compute opticalFlowLK here.
-            dt = self.local_costmap_msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
-            if dt >0.01 and dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
-                I1g, I2g = self.preprocess_images()
-                I1g = gaussian_filter(I1g, sigma=0.5)
-                I2g = gaussian_filter(I2g, sigma=0.5)
-                # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
-                # flow = -flow
-                flow = -cv2.calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 2, self.window_size, 3, 5, 1.2, 0)
-                flow[:,:,0] = gaussian_filter(flow[:,:,0], sigma=5)
-                flow[:,:,1] = gaussian_filter(flow[:,:,1], sigma=5)
-        
-                # Generate and Publish ObstacleArrayMsg
-                self.publish_obstacles(flow, dt)
-
-                # Save current costmap to buffer
-                self.prev_local_costmap_msg = copy(self.local_costmap_msg)
+        data = None # TODO
+        db = DBSCAN(eps=0.3, min_samples=10).fit(data)
+        if type(self.prev_DBSCAN_result) != type(None)
+            # TODO
+            line_start_x = None
+            line_start_y = None
+            line_end_x   = None
+            line_end_y   = None
+            # Generate and Publish ObstacleArrayMsg
+            self.publish_obstacles(line_start_x, line_start_y, line_end_x, line_end_y)
+            
+        # Save current DBSCAN result to buffer
+        self.prev_DBSCAN_result = db # TODO
 
 
-    def publish_obstacles(self, flow, dt):
+    def publish_obstacles(self, line_start_x, line_start_y, line_end_x, line_end_y):
         '''
-        Generate and publish ObstacleArrayMsg from flow vectors.
+        Generate and publish ObstacleArrayMsg.
         '''
-        obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * self.local_costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-        obstacle_vels[:, :, 0][self.local_costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
-        obstacle_vels[:, :, 1][self.local_costmap_msg.data.T==0] = 0
-
-        # Generate obstacle_msg for TebLocalPlanner here.
         obstacle_msg = ObstacleArrayMsg()
         obstacle_msg.header.stamp = rospy.Time.now()
         obstacle_msg.header.frame_id = self.global_frame[1:] \
             if self.global_frame[0]=='/' else self.global_frame
-
-        for i in range(obstacle_vels.shape[0]):
-            for j in range(obstacle_vels.shape[1]):
-                # Add point obstacle to the message if obstacle speed is larger than self.movement_tol.
-                obstacle_speed = np.linalg.norm([obstacle_vels[i, j, 0] + obstacle_vels[i, j, 1]])
-                if obstacle_speed > self.movement_tol:
-                    flow_vector_position = (
-                        self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution*(i+0.5),
-                        self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution*(j+0.5)
-                    )
-                    obstacle_msg.obstacles.append(ObstacleMsg())
-                    obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
-                    obstacle_msg.obstacles[-1].polygon.points = [Point32(), Point32()]
-                    obstacle_msg.obstacles[-1].polygon.points[0].x = flow_vector_position[0]
-                    obstacle_msg.obstacles[-1].polygon.points[0].y = flow_vector_position[1]
-                    obstacle_msg.obstacles[-1].polygon.points[0].z = 0
-                    obstacle_msg.obstacles[-1].polygon.points[1].x = flow_vector_position[0] + obstacle_vels[i, j, 0]*self.prediction_horizon
-                    obstacle_msg.obstacles[-1].polygon.points[1].y = flow_vector_position[1] + obstacle_vels[i, j, 1]*self.prediction_horizon
-                    obstacle_msg.obstacles[-1].polygon.points[1].z = 0
+        obstacle_msg.obstacles.append(ObstacleMsg())
+        obstacle_msg.obstacles[-1].id = 0
+        obstacle_msg.obstacles[-1].polygon.points = [Point32(), Point32()]
+        obstacle_msg.obstacles[-1].polygon.points[0].x = line_start_x
+        obstacle_msg.obstacles[-1].polygon.points[0].y = line_start_y
+        obstacle_msg.obstacles[-1].polygon.points[0].z = 0
+        obstacle_msg.obstacles[-1].polygon.points[1].x = line_end_x
+        obstacle_msg.obstacles[-1].polygon.points[1].y = line_end_y
+        obstacle_msg.obstacles[-1].polygon.points[1].z = 0
 
         self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
 
@@ -216,54 +196,6 @@ class ObstaclePredictor:
 
 ##  End of class ObstaclePredictor.
 
-
-
-def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
-    '''
-    Lucas-Kanade optical flow
-    '''
-    kernel_x = np.array([[-1., 1.], [-1., 1.]])
-    kernel_y = np.array([[-1., -1.], [1., 1.]])
-    kernel_t = np.array([[1., 1.], [1., 1.]])#*.25
-    w = window_size / 2 # window_size is odd, all the pixels with offset in between [-w, w] are inside the window
-    I1g = I1g / 255. # normalize pixels
-    I2g = I2g / 255. # normalize pixels
-    # Implement Lucas Kanade
-    # for each point, calculate I_x, I_y, I_t
-    mode = 'same'
-    fx = signal.convolve2d(I1g, kernel_x, boundary='symm', mode=mode)
-    fy = signal.convolve2d(I1g, kernel_y, boundary='symm', mode=mode)
-    ft = signal.convolve2d(I2g, kernel_t, boundary='symm', mode=mode) + signal.convolve2d(I1g, -kernel_t, boundary='symm', mode=mode)
-    uv = np.zeros([I1g.shape[0], I1g.shape[1], 2])
-    # within window window_size * window_size
-    rep_x_list = []
-    rep_y_list = []
-    u_list = []
-    v_list = []
-    for i in range(w, I1g.shape[0]-w):
-        for j in range(w, I1g.shape[1]-w):
-            Ix = fx[i-w:i+w+1, j-w:j+w+1].flatten()
-            Iy = fy[i-w:i+w+1, j-w:j+w+1].flatten()
-            It = ft[i-w:i+w+1, j-w:j+w+1].flatten()
-            b = -It # Av = b <- Ix*u+Iy*v+It = 0
-            A = np.stack([Ix, Iy], axis = 1) # 8.1 add. Ix & Iy are columns.
-            # if threshold τ is larger than the smallest eigenvalue of A'A:
-            nu = np.matmul(np.linalg.pinv(A), b) # v = (A'A)^-1 * (-A'It)
-            if 0.3<np.linalg.norm(nu)<1.1:
-                uv[i, j, 0] = nu[0]
-                uv[i, j, 1] =-nu[1]
-                u_list.append(nu[0])
-                v_list.append(nu[1])
-                rep_x_list.append(j)
-                rep_y_list.append(i)
-                #print(i,j)
-
-    rep_x = np.average(rep_x_list)
-    rep_y = np.average(rep_y_list)
-    rep_u = np.average(u_list)
-    rep_v = np.average(v_list)
- 
-    return uv, [rep_x,rep_y,rep_u,-rep_v]   # [August 8, 19:46] Return changed: (ndarray(nx,ny), ndarray(nx,ny)) -> ndarray(nx,ny,2) 
 
 
 def isOccupancyGrid(msg):
