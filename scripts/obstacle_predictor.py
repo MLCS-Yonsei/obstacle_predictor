@@ -60,7 +60,6 @@ class ObstaclePredictor:
         Compute optical flow of local costmap to predict velocities of moving obstacles.
         Predicted velocities will be used for generating ObstacleArrayMsg for TebLocalPlannerROS.
         '''
-
         if isOccupancyGrid(self.global_costmap_msg):
             msg = reshapeCostmap(msg)
             self.mask_costmap(msg)
@@ -78,17 +77,18 @@ class ObstaclePredictor:
 
 
     def publish_obstacles(self, costmap_msg, dt, flow, rep_physics):
-
+        '''
+        Generate and publish ObstacleArrayMsg from flow vectors.
+        '''
         robot_vel = (
             (costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x)/dt,
             (costmap_msg.info.origin.position.y - self.prev_local_costmap_msg.info.origin.position.y)/dt
         )
         obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-        obstacle_vels[:, :, 0] -= robot_vel[0]
+        obstacle_vels[:, :, 0] -= robot_vel[0]  # Subtract robot velocity.
         obstacle_vels[:, :, 1] -= robot_vel[1]
-        obstacle_vels[:, :, 0][self.prev_local_costmap_msg.data.T==0] = 0
+        obstacle_vels[:, :, 0][self.prev_local_costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
         obstacle_vels[:, :, 1][self.prev_local_costmap_msg.data.T==0] = 0
-
 
         # Generate obstacle_msg for TebLocalPlanner here.
         obstacle_msg = ObstacleArrayMsg()
@@ -117,8 +117,6 @@ class ObstaclePredictor:
 
         self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
 
-        ''' End of function ObstaclePredictor.publish_obstacles '''
-
 
     def mask_costmap(self, costmap_msg):
         '''
@@ -142,12 +140,16 @@ class ObstaclePredictor:
         costmap_msg.data[mask > 0] = 0
 
 
-    ''' End of class ObstaclePredictor '''
+    '''
+    End of class ObstaclePredictor.
+    '''
 
 
 
 def opticalFlowLK(I1g, I2g, window_size, tau=1e-2): # 7.31 add
- 
+    '''
+    Lucas-Kanade optical flow
+    '''
     kernel_x = np.array([[-1., 1.], [-1., 1.]])
     kernel_y = np.array([[-1., -1.], [1., 1.]])
     kernel_t = np.array([[1., 1.], [1., 1.]])#*.25
