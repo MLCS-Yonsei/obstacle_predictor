@@ -69,6 +69,7 @@ class ObstaclePredictor:
                 # Compute opticalFlowLK here.
                 dt = msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
                 if dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
+                    I1g, I2g = self.preprocess_images(msg)
                     flow, rep_physics = opticalFlowLK(self.prev_local_costmap_msg.data, msg.data, self.window_size)
             
                     # Generate and Publish ObstacleArrayMsg
@@ -81,15 +82,9 @@ class ObstaclePredictor:
         '''
         Generate and publish ObstacleArrayMsg from flow vectors.
         '''
-        robot_vel = (
-            (costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x)/dt,
-            (costmap_msg.info.origin.position.y - self.prev_local_costmap_msg.info.origin.position.y)/dt
-        )
         obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-        obstacle_vels[:, :, 0] -= robot_vel[0]  # Subtract robot velocity.
-        obstacle_vels[:, :, 1] -= robot_vel[1]
-        obstacle_vels[:, :, 0][self.prev_local_costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
-        obstacle_vels[:, :, 1][self.prev_local_costmap_msg.data.T==0] = 0
+        obstacle_vels[:, :, 0][costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
+        obstacle_vels[:, :, 1][costmap_msg.data.T==0] = 0
 
         # Generate obstacle_msg for TebLocalPlanner here.
         obstacle_msg = ObstacleArrayMsg()
@@ -141,9 +136,39 @@ class ObstaclePredictor:
         costmap_msg.data[mask > 0] = 0
 
 
-    '''
-    End of class ObstaclePredictor.
-    '''
+    def preprocess_images(self, costmap_msg):
+        '''
+        Preprocess images for optical flow.
+        Match the location of current costmap and previous costmap.
+        '''
+        w = costmap_msg.info.width
+        h = costmap_msg.info.height
+        dx = costmap_msg.info.origin.position.x - self.prev_local_costmap_msg.info.origin.position.x
+        dy = costmap_msg.info.origin.position.y - self.prev_local_costmap_msg.info.origin.position.y
+
+        di = int(round(dy/costmap_msg.info.resolution))
+        dj = int(round(dx/costmap_msg.info.resolution))
+
+        img_prev = np.zeros_like(self.prev_local_costmap_msg.data)
+        img_curr = np.zeros_like(costmap_msg.data)
+        if di < 0:
+            if dj < 0:
+                img_prev[-di:h, -dj:w] = self.prev_local_costmap_msg.data[:h+di, :w+dj]
+                img_curr[-di:h, -dj:w] = costmap_msg.data[-di:h, -dj:w]
+            else:
+                img_prev[-di:h, :w-dj] = self.prev_local_costmap_msg.data[:h+di, dj:w]
+                img_curr[-di:h, :w-dj] = costmap_msg.data[-di:h, :w-dj]
+        else:
+            if dj < 0:
+                img_prev[:h-di, -dj:w] = self.prev_local_costmap_msg.data[di:h, :w+dj]
+                img_curr[:h-di, -dj:w] = costmap_msg.data[:h-di, -dj:w]
+            else:
+                img_prev[:h-di, :w-dj] = self.prev_local_costmap_msg.data[di:h, dj:w]
+                img_curr[:h-di, :w-dj] = costmap_msg.data[:h-di, :w-dj]
+        
+        return img_prev, img_curr
+
+##  End of class ObstaclePredictor.
 
 
 
