@@ -9,7 +9,7 @@
   <arg name="prediction_horizon"    default="1.0"/>
   <arg name="movement_tolerence"    default="0.1"/>
   <arg name="timediff_tolerence"    default="2.0"/>
-  <arg name="window_size"           default="3"/>
+  <arg name="window_size"           default="5"/>
   <arg name="use_sim_time"          default="true"/>
 
   <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true" >

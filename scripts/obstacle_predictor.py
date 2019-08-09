@@ -3,6 +3,7 @@
 
 from copy import copy
 from scipy import signal, interpolate
+from scipy.ndimage.filters import gaussian_filter
 
 import rospy
 from nav_msgs.msg import OccupancyGrid
@@ -75,6 +76,8 @@ class ObstaclePredictor:
         if isOccupancyGrid(self.global_costmap_msg):
             self.local_costmap_msg = reshapeCostmap(msg)
             self.mask_costmap(self.local_costmap_msg)
+            if not isOccupancyGrid(self.prev_local_costmap_msg):
+                self.prev_local_costmap_msg = copy(self.local_costmap_msg)
             self.predict_velocities()
 
 
@@ -104,9 +107,15 @@ class ObstaclePredictor:
         if isOccupancyGrid(self.prev_local_costmap_msg):
             # Compute opticalFlowLK here.
             dt = self.local_costmap_msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
-            if dt >0.05 and dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
+            if dt >0.01 and dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
                 I1g, I2g = self.preprocess_images()
-                flow, rep_physics = opticalFlowLK(I1g, I2g, self.window_size)
+                I1g = gaussian_filter(I1g, sigma=0.5)
+                I2g = gaussian_filter(I2g, sigma=0.5)
+                # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
+                # flow = -flow
+                flow = -cv2.calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 2, self.window_size, 3, 5, 1.2, 0)
+                flow[:,:,0] = gaussian_filter(flow[:,:,0], sigma=5)
+                flow[:,:,1] = gaussian_filter(flow[:,:,1], sigma=5)
         
                 # Generate and Publish ObstacleArrayMsg
                 self.publish_obstacles(flow, dt)
