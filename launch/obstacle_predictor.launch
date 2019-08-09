@@ -8,6 +8,7 @@
   <arg name="obstacle_topic"        default="/move_base/TebLocalPlannerROS/obstacles"/>
   <arg name="prediction_horizon"    default="1.0"/>
   <arg name="movement_tolerence"    default="0.1"/>
+  <arg name="timediff_tolerence"    default="2.0"/>
   <arg name="window_size"           default="3"/>
   <arg name="use_sim_time"          default="true"/>
 
@@ -26,6 +27,7 @@
     <param name="obstacle_topic"        value="$(arg obstacle_topic)"/>
     <param name="prediction_horizon"    value="$(arg prediction_horizon)"/>
     <param name="movement_tolerence"    value="$(arg movement_tolerence)"/>
+    <param name="timediff_tolerence"    value="$(arg timediff_tolerence)"/>
     <param name="window_size"           value="$(arg window_size)"/>
   </node>
 

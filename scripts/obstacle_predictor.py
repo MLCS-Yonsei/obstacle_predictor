@@ -28,7 +28,8 @@ class ObstaclePredictor:
         self.local_costmap_topic = rospy.get_param("/obstacle_predictor/local_costmap_topic")
         self.obstacle_topic = rospy.get_param("/obstacle_predictor/obstacle_topic")
         self.prediction_horizon = rospy.get_param("/obstacle_predictor/prediction_horizon")
-        self.tol = rospy.get_param("/obstacle_predictor/movement_tolerence")
+        self.movement_tol = rospy.get_param("/obstacle_predictor/movement_tolerence")
+        self.timediff_tol = rospy.get_param("/obstacle_predictor/timediff_tolerence")
         self.window_size = rospy.get_param("/obstacle_predictor/window_size")
 
         # Initialize ros node
@@ -67,7 +68,7 @@ class ObstaclePredictor:
             if isOccupancyGrid(self.prev_local_costmap_msg):
                 # Compute opticalFlowLK here.
                 dt = msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
-                if dt < 1.0: # skip opticalflow when dt is larger than 1 sec.
+                if dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
                     flow, rep_physics = opticalFlowLK(self.prev_local_costmap_msg.data, msg.data, self.window_size)
             
                     # Generate and Publish ObstacleArrayMsg
@@ -98,9 +99,9 @@ class ObstaclePredictor:
 
         for i in range(obstacle_vels.shape[0]):
             for j in range(obstacle_vels.shape[1]):
-                # Add point obstacle to the message if obstacle speed is larger than tolerance.
+                # Add point obstacle to the message if obstacle speed is larger than self.movement_tol.
                 obstacle_speed = np.linalg.norm([obstacle_vels[i, j, 0] + obstacle_vels[i, j, 1]])
-                if obstacle_speed > self.tol:
+                if obstacle_speed > self.movement_tol:
                     flow_vector_position = (
                         costmap_msg.info.origin.position.x + costmap_msg.info.resolution*(i+0.5),
                         costmap_msg.info.origin.position.y + costmap_msg.info.resolution*(j+0.5)
