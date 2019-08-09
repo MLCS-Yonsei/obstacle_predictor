@@ -70,7 +70,7 @@ class ObstaclePredictor:
                 dt = msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
                 if dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
                     I1g, I2g = self.preprocess_images(msg)
-                    flow, rep_physics = opticalFlowLK(self.prev_local_costmap_msg.data, msg.data, self.window_size)
+                    flow, rep_physics = opticalFlowLK(I1g, I2g, self.window_size)
             
                     # Generate and Publish ObstacleArrayMsg
                     self.publish_obstacles(msg, dt, flow, rep_physics)
