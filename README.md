@@ -13,7 +13,8 @@ roslaunch obstacle_predictor obstacle_predictor.launch
 ## parameters
 - ```global_frame_id```: The name of the coordinate frame published by the localization system. (default: ```/map```)
 - ```base_frame_id```: Which frame to use for the robot base. (default: ```/base_footprint```)
-- ```costmap_topic```: Topic name of the local costmap message, provided by the ```/move_base``` node. (default: ```/move_base/local_costmap/costmap```)
+- ```global_costmap_topic```: Topic name of the local costmap message, provided by the ```/costmap_2d_node``` node. (default: ```/costmap_node/costmap/costmap```)
+- ```local_costmap_topic```: Topic name of the local costmap message, provided by the ```/move_base``` node. (default: ```/move_base/local_costmap/costmap```)
 - ```obstacle_topic```: Topic name of the obstacle message to publish. (default: ```/move_base/TebLocalPlanner/obstacles```)
 - ```prediction_horizon```: Time horizon for generating predicted obstacles. (default: ```1.0```)
 - ```movement_tolerence```: If speed of some dynamic obstacles is slower than this parameter, those obstacles will be ignored. (default: ```0.1```)
