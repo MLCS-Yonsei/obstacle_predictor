@@ -3,8 +3,8 @@
 
   <arg name="global_frame_id"       default="/map"/>
   <arg name="base_frame_id"         default="/base_footprint"/>
-  <arg name="global_costmap_topic"  default="/costmap_node/costmap/costmap"/>
-  <arg name="local_costmap_topic"   default="/move_base/local_costmap/costmap"/>
+  <arg name="global_costmap_topic"  default="/static_costmap/costmap_node/costmap/costmap"/>
+  <arg name="local_costmap_topic"   default="/costmap_node/costmap/costmap"/>
   <arg name="obstacle_topic"        default="/move_base/TebLocalPlannerROS/obstacles"/>
   <arg name="prediction_horizon"    default="1.0"/>
   <arg name="movement_tolerence"    default="0.1"/>
@@ -12,9 +12,16 @@
   <arg name="window_size"           default="5"/>
   <arg name="use_sim_time"          default="true"/>
 
+  <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true" ns="static_costmap">
+    <rosparam file="$(find obstacle_predictor)/params/costmap_common_params.yaml" command="load" ns="costmap" />
+    <rosparam file="$(find obstacle_predictor)/params/static_costmap_params.yaml" command="load" />
+    <param name="publish_frequency" type="double" value="20.0" />
+    <param name="/use_sim_time" value="$(arg use_sim_time)"/>
+  </node>
+
   <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true" >
     <rosparam file="$(find obstacle_predictor)/params/costmap_common_params.yaml" command="load" ns="costmap" />
-    <rosparam file="$(find obstacle_predictor)/params/costmap_params.yaml" command="load" />
+    <rosparam file="$(find obstacle_predictor)/params/dynamic_costmap_params.yaml" command="load" />
     <param name="publish_frequency" type="double" value="20.0" />
     <param name="/use_sim_time" value="$(arg use_sim_time)"/>
   </node>

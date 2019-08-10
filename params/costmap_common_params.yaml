@@ -1,6 +1,6 @@
 #---standard pioneer footprint---
 #---(in meters)---
-robot_radius: 0.6
+robot_radius: 0.5
 
 
 transform_tolerance: 0.2
@@ -10,7 +10,7 @@ obstacle_layer:
   enabled: true
   obstacle_range: 12.0 # the maximum range sensor reading that will result in an obstacle being put into the costmap
   raytrace_range: 15.0 # the range to which we will raytrace freespace given a sensor reading
-  inflation_radius: 0.3
+  inflation_radius: 0.2
   track_unknown_space: true
   combination_method: 1
  
