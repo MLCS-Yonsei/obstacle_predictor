@@ -200,40 +200,6 @@ class ObstaclePredictor:
 
 
 
-def isOccupancyGrid(msg):
-    '''
-    Return False if msg is not an OccupancyGrid class.
-    '''
-    return type(msg) == type(OccupancyGrid())
-
-
-def isOccupancyGridUpdate(msg):
-    '''
-    Return False if msg is not an OccupancyGridUpdate class.
-    '''
-    return type(msg) == type(OccupancyGridUpdate())
-
-
-def reshapeCostmap(msg):
-    '''
-    Reshape, remove negative values and change type as uint8 (for cv2.resize)
-    '''
-    msg.data = np.reshape(
-        msg.data,
-        [msg.info.height, msg.info.width]
-    ).clip(0).astype(np.uint8)
-    return msg
-
-
-def updateCostmap(costmap_msg, update_msg):
-    temp = copy(costmap_msg)
-    temp.header.stamp = update_msg.header.stamp
-    temp.info.width = update_msg.width
-    temp.info.height = update_msg.height
-    temp.data = update_msg.data
-    costmap_msg = reshapeCostmap(temp)
-
-
 if __name__ == '__main__':
 
     try:
