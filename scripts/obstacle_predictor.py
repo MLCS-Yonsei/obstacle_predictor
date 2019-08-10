@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from copy import copy
+import time
 from scipy.ndimage.filters import gaussian_filter
 
 import rospy
@@ -162,6 +163,7 @@ class ObstaclePredictor:
 
 
     def mask_costmap(self, costmap_msg):
+        tic = time.time()
         '''
         Resize costmap data to 2D array and mask static obstacles.
         '''

@@ -86,8 +86,13 @@ def reshapeCostmap(msg):
 def updateCostmap(costmap_msg, update_msg):
     temp = copy(costmap_msg)
     temp.header.stamp = update_msg.header.stamp
-    temp.info.width = update_msg.width
-    temp.info.height = update_msg.height
-    temp.data = update_msg.data
-    return reshapeCostmap(temp)
+    temp.data[
+        update_msg.y:update_msg.y+update_msg.height,
+        update_msg.x:update_msg.x+update_msg.width
+    ] = np.reshape(
+        update_msg.data,
+        [update_msg.height, update_msg.width]
+    ).clip(0).astype(np.uint8)
+    costmap_msg = temp
+    return costmap_msg
 
