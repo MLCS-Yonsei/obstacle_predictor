@@ -15,7 +15,9 @@ except:
     rospy.logerr('Failed to import ObstacleArrayMsg, ObstacleMsg.')
 
 import numpy as np
-import cv2
+from cv2 import resize
+
+from utils import *
 
 
 
@@ -152,7 +154,7 @@ class ObstaclePredictor:
         di = int(round(dy/self.global_costmap_msg.info.resolution))
         dj = int(round(dx/self.global_costmap_msg.info.resolution))
 
-        mask = cv2.resize(
+        mask = resize(
             self.global_costmap_msg.data[
                 di:di+int(round(costmap_msg.info.height*multiplier)),
                 dj:dj+int(round(costmap_msg.info.width*multiplier))
