@@ -1,21 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from copy import copy
-import time
-from scipy.ndimage.filters import gaussian_filter
-
 import rospy
-from nav_msgs.msg import OccupancyGrid
-from map_msgs.msg import OccupancyGridUpdate
 from geometry_msgs.msg import PolygonStamped, Point32
 try:
     from costmap_converter.msg import ObstacleArrayMsg, ObstacleMsg
 except:
     rospy.logerr('Failed to import ObstacleArrayMsg, ObstacleMsg.')
 
-import numpy as np
-from cv2 import resize, calcOpticalFlowFarneback
+from cv2 import resize, calcOpticalFlowFarneback, GaussianBlur
 
 from utils import *
 
@@ -31,9 +24,10 @@ class ObstaclePredictor:
         self.global_costmap_topic = rospy.get_param("/obstacle_predictor/global_costmap_topic")
         self.local_costmap_topic = rospy.get_param("/obstacle_predictor/local_costmap_topic")
         self.obstacle_topic = rospy.get_param("/obstacle_predictor/obstacle_topic")
+        self.movement_tol_max = rospy.get_param("/obstacle_predictor/movement_tol_max")
+        self.movement_tol_min = rospy.get_param("/obstacle_predictor/movement_tol_min")
         self.prediction_horizon = rospy.get_param("/obstacle_predictor/prediction_horizon")
-        self.movement_tol = rospy.get_param("/obstacle_predictor/movement_tolerence")
-        self.timediff_tol = rospy.get_param("/obstacle_predictor/timediff_tolerence")
+        self.timediff_tol = rospy.get_param("/obstacle_predictor/timediff_tol")
         self.window_size = rospy.get_param("/obstacle_predictor/window_size")
 
         # Initialize ros node
@@ -111,13 +105,9 @@ class ObstaclePredictor:
             dt = self.local_costmap_msg.header.stamp.to_sec() - self.prev_local_costmap_msg.header.stamp.to_sec()
             if dt >0.01 and dt < self.timediff_tol: # skip opticalflow when dt is larger than self.timediff_tol (sec).
                 I1g, I2g = self.preprocess_images()
-                I1g = gaussian_filter(I1g, sigma=0.5)
-                I2g = gaussian_filter(I2g, sigma=0.5)
                 # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
                 # flow = -flow
-                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 2, self.window_size, 3, 5, 1.2, 0)
-                flow[:,:,0] = gaussian_filter(flow[:,:,0], sigma=5)
-                flow[:,:,1] = gaussian_filter(flow[:,:,1], sigma=5)
+                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 1, self.window_size, 3, 5, 1.2, 0)
         
                 # Generate and Publish ObstacleArrayMsg
                 self.publish_obstacles(flow, dt)
@@ -139,31 +129,41 @@ class ObstaclePredictor:
         obstacle_msg.header.stamp = rospy.Time.now()
         obstacle_msg.header.frame_id = self.global_frame[1:] \
             if self.global_frame[0]=='/' else self.global_frame
-
+        robot_pose = (
+            self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution *self.local_costmap_msg.info.height/2.0,
+            self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution *self.local_costmap_msg.info.width/2.0
+        )
         for i in range(obstacle_vels.shape[0]):
             for j in range(obstacle_vels.shape[1]):
                 # Add point obstacle to the message if obstacle speed is larger than self.movement_tol.
-                obstacle_speed = np.linalg.norm([obstacle_vels[i, j, 0] + obstacle_vels[i, j, 1]])
-                if obstacle_speed > self.movement_tol:
+                obstacle_speed = np.linalg.norm(obstacle_vels[i, j, :])
+                if obstacle_speed > self.movement_tol_min and obstacle_speed < self.movement_tol_max:
                     flow_vector_position = (
                         self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution*(i+0.5),
                         self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution*(j+0.5)
                     )
+                    line_scale = (
+                        1. - np.exp(
+                            -np.linalg.norm([
+                                flow_vector_position[0] - robot_pose[0],
+                                flow_vector_position[1] - robot_pose[1]
+                            ])/2.
+                        )
+                    )* self.prediction_horizon
                     obstacle_msg.obstacles.append(ObstacleMsg())
                     obstacle_msg.obstacles[-1].id = len(obstacle_msg.obstacles)-1
                     obstacle_msg.obstacles[-1].polygon.points = [Point32(), Point32()]
                     obstacle_msg.obstacles[-1].polygon.points[0].x = flow_vector_position[0]
                     obstacle_msg.obstacles[-1].polygon.points[0].y = flow_vector_position[1]
                     obstacle_msg.obstacles[-1].polygon.points[0].z = 0
-                    obstacle_msg.obstacles[-1].polygon.points[1].x = flow_vector_position[0] + obstacle_vels[i, j, 0]*self.prediction_horizon
-                    obstacle_msg.obstacles[-1].polygon.points[1].y = flow_vector_position[1] + obstacle_vels[i, j, 1]*self.prediction_horizon
+                    obstacle_msg.obstacles[-1].polygon.points[1].x = flow_vector_position[0] + obstacle_vels[i, j, 0]*line_scale
+                    obstacle_msg.obstacles[-1].polygon.points[1].y = flow_vector_position[1] + obstacle_vels[i, j, 1]*line_scale
                     obstacle_msg.obstacles[-1].polygon.points[1].z = 0
 
         self.obstacle_pub.publish(obstacle_msg)     # Publish predicted obstacles
 
 
     def mask_costmap(self, costmap_msg):
-        tic = time.time()
         '''
         Resize costmap data to 2D array and mask static obstacles.
         '''
@@ -215,7 +215,7 @@ class ObstaclePredictor:
                 img_prev[:h-di, :w-dj] = self.prev_local_costmap_msg.data[di:h, dj:w]
                 img_curr[:h-di, :w-dj] = self.local_costmap_msg.data[:h-di, :w-dj]
         
-        return img_prev, img_curr
+        return GaussianBlur(img_prev,(5,5),3), GaussianBlur(img_curr,(5,5),3)
 
 ##  End of class ObstaclePredictor.
 
