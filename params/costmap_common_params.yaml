@@ -8,9 +8,8 @@ map_type: costmap
 
 obstacle_layer:
   enabled: true
-  obstacle_range: 12.0 # the maximum range sensor reading that will result in an obstacle being put into the costmap
-  raytrace_range: 15.0 # the range to which we will raytrace freespace given a sensor reading
-  inflation_radius: 0.2
+  obstacle_range: 5.0 # the maximum range sensor reading that will result in an obstacle being put into the costmap
+  raytrace_range: 10.0 # the range to which we will raytrace freespace given a sensor reading
   track_unknown_space: true
   combination_method: 1
  
@@ -26,4 +25,3 @@ inflation_layer:
 static_layer:
   enabled:              true
   map_topic:            "/map"
-
