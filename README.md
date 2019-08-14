@@ -17,6 +17,7 @@ roslaunch obstacle_predictor obstacle_predictor.launch
 - ```local_costmap_topic```: Topic name of the local costmap message, provided by the ```/move_base``` node. (default: ```/move_base/local_costmap/costmap```)
 - ```obstacle_topic```: Topic name of the obstacle message to publish. (default: ```/move_base/TebLocalPlanner/obstacles```)
 - ```prediction_horizon```: Time horizon for generating predicted obstacles. (default: ```1.0```)
-- ```movement_tolerence```: If speed of some dynamic obstacles is slower than this parameter, those obstacles will be ignored. (default: ```0.1```)
+- ```movement_tol_min```: If predicted speed of some dynamic obstacles is slower than this parameter, those obstacles will be ignored. (default: ```0.1```)
+- ```movement_tol_max```: If predicted speed of some dynamic obstacles is faster than this parameter, those obstacles will be ignored. (default: ```0.5```)
 - ```timediff_tolerence```: If time difference between previous local costmap and current local costmap is longer than this parameter, prediction will be skipped. (default: ```2.0```)
 - ```window_size```: Window size for Lucas-Kanade optical flow. (default: ```3```)
