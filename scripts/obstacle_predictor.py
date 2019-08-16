@@ -9,8 +9,10 @@ except:
     rospy.logerr('Failed to import ObstacleArrayMsg, ObstacleMsg.')
 
 from cv2 import resize, calcOpticalFlowFarneback, GaussianBlur
+from scipy.ndimage.filters import gaussian_filter
 
 from utils import *
+import time
 
 
 
@@ -20,6 +22,8 @@ class ObstaclePredictor:
 
         # ROS parameters
         self.global_frame = rospy.get_param("/obstacle_predictor/global_frame_id")
+        self.global_frame = self.global_frame[1:] \
+            if self.global_frame[0]=='/' else self.global_frame
         self.base_frame = rospy.get_param("/obstacle_predictor/base_frame_id")
         self.global_costmap_topic = rospy.get_param("/obstacle_predictor/global_costmap_topic")
         self.local_costmap_topic = rospy.get_param("/obstacle_predictor/local_costmap_topic")
@@ -70,11 +74,13 @@ class ObstaclePredictor:
         Save current local costmap to buffer
         '''
         if isOccupancyGrid(self.global_costmap_msg):
+            tic = time.time()
             self.local_costmap_msg = reshapeCostmap(msg)
             self.mask_costmap(self.local_costmap_msg)
             if not isOccupancyGrid(self.prev_local_costmap_msg):
                 self.prev_local_costmap_msg = copy(self.local_costmap_msg)
             self.predict_velocities()
+            print time.time() - tic
 
 
     def globalCostmapUpdateCallback(self, msg):
@@ -90,9 +96,11 @@ class ObstaclePredictor:
         Update local costmap buffer
         '''
         if isOccupancyGrid(self.local_costmap_msg) and isOccupancyGrid(self.global_costmap_msg):
+            tic = time.time()
             updateCostmap(self.local_costmap_msg, msg)
             self.mask_costmap(self.local_costmap_msg)
             self.predict_velocities()
+            print time.time() - tic
 
 
     def predict_velocities(self):
@@ -107,7 +115,9 @@ class ObstaclePredictor:
                 I1g, I2g = self.preprocess_images()
                 # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
                 # flow = -flow
-                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 1, self.window_size, 3, 5, 1.2, 0)
+                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 2, self.window_size, 3, 5, 1.2, 0)
+                # flow[:,:,0] = gaussian_filter(flow[:,:,0], 3.0)
+                # flow[:,:,1] = gaussian_filter(flow[:,:,1], 3.0)
         
                 # Generate and Publish ObstacleArrayMsg
                 self.publish_obstacles(flow, dt)
@@ -121,23 +131,22 @@ class ObstaclePredictor:
         Generate and publish ObstacleArrayMsg from flow vectors.
         '''
         obstacle_vels = np.transpose(flow, axes=[1,0,2]) / dt * self.local_costmap_msg.info.resolution # opt_uv needs to be transposed. ( [y,x] -> [x,y] )
-        obstacle_vels[:, :, 0][self.local_costmap_msg.data.T==0] = 0   # Mask obstacle velocity using costmap occupancy.
-        obstacle_vels[:, :, 1][self.local_costmap_msg.data.T==0] = 0
+        mask_img = gaussian_filter(self.local_costmap_msg.data.T, 1.0)
 
         # Generate obstacle_msg for TebLocalPlanner here.
         obstacle_msg = ObstacleArrayMsg()
         obstacle_msg.header.stamp = rospy.Time.now()
-        obstacle_msg.header.frame_id = self.global_frame[1:] \
-            if self.global_frame[0]=='/' else self.global_frame
+        obstacle_msg.header.frame_id = self.global_frame
         robot_pose = (
             self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution *self.local_costmap_msg.info.height/2.0,
             self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution *self.local_costmap_msg.info.width/2.0
         )
+        obstacle_speed = np.linalg.norm(obstacle_vels, axis=2)
+        obstacle_speed[mask_img < 50] = 0
         for i in range(obstacle_vels.shape[0]):
             for j in range(obstacle_vels.shape[1]):
                 # Add point obstacle to the message if obstacle speed is larger than self.movement_tol.
-                obstacle_speed = np.linalg.norm(obstacle_vels[i, j, :])
-                if obstacle_speed > self.movement_tol_min and obstacle_speed < self.movement_tol_max:
+                if obstacle_speed[i, j] > self.movement_tol_min and obstacle_speed[i, j] < self.movement_tol_max:
                     flow_vector_position = (
                         self.local_costmap_msg.info.origin.position.x + self.local_costmap_msg.info.resolution*(i+0.5),
                         self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution*(j+0.5)

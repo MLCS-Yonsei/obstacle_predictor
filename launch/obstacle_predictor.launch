@@ -8,9 +8,9 @@
   <arg name="obstacle_topic"        default="/move_base/TebLocalPlannerROS/obstacles"/>
   <arg name="movement_tol_max"      default="0.5"/>
   <arg name="movement_tol_min"      default="0.1"/>
-  <arg name="prediction_horizon"    default="2.0"/>
+  <arg name="prediction_horizon"    default="7.0"/>
   <arg name="timediff_tol"          default="2.0"/>
-  <arg name="window_size"           default="15"/>
+  <arg name="window_size"           default="30"/>
   <arg name="use_sim_time"          default="true"/>
 
   <node name="costmap_node" pkg="costmap_2d" type="costmap_2d_node" output="screen" clear_params="true" ns="static_costmap">
