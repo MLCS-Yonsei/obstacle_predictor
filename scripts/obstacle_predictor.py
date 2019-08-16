@@ -9,7 +9,7 @@ except:
     rospy.logerr('Failed to import ObstacleArrayMsg, ObstacleMsg.')
 
 from cv2 import resize, calcOpticalFlowFarneback, GaussianBlur
-from scipy.ndimage.filters import gaussian_filter
+from scipy.ndimage.filters import gaussian_filter, median_filter
 
 from utils import *
 import time
@@ -111,9 +111,11 @@ class ObstaclePredictor:
                 I1g, I2g = self.preprocess_images()
                 # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
                 # flow = -flow
-                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 2, self.window_size, 3, 5, 1.2, 0)
+                flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 3, self.window_size, 3, 5, 1.2, 0)
                 # flow[:,:,0] = gaussian_filter(flow[:,:,0], 3.0)
                 # flow[:,:,1] = gaussian_filter(flow[:,:,1], 3.0)
+                flow[:,:,0] = median_filter(flow[:,:,0], 9)
+                flow[:,:,1] = median_filter(flow[:,:,1], 9)
         
                 # Generate and Publish ObstacleArrayMsg
                 self.publish_obstacles(flow, dt)
@@ -138,7 +140,7 @@ class ObstaclePredictor:
             self.local_costmap_msg.info.origin.position.y + self.local_costmap_msg.info.resolution *self.local_costmap_msg.info.width/2.0
         )
         obstacle_speed = np.linalg.norm(obstacle_vels, axis=2)
-        obstacle_speed[mask_img < 50] = 0
+        obstacle_speed[mask_img < 40] = 0
         for i in range(obstacle_vels.shape[0]):
             for j in range(obstacle_vels.shape[1]):
                 # Add point obstacle to the message if obstacle speed is larger than self.movement_tol.

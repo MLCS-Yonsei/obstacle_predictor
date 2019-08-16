@@ -12,4 +12,4 @@ costmap:
   
   plugins:
     - {name: obstacle_layer, type: "custom_costmap::ObstacleLayer"}
-    - {name: dynamic_inflation_layer, type: "costmap_2d::InflationLayer"}
+    #- {name: dynamic_inflation_layer, type: "costmap_2d::InflationLayer"}
