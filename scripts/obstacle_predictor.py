@@ -74,13 +74,11 @@ class ObstaclePredictor:
         Save current local costmap to buffer
         '''
         if isOccupancyGrid(self.global_costmap_msg):
-            tic = time.time()
             self.local_costmap_msg = reshapeCostmap(msg)
             self.mask_costmap(self.local_costmap_msg)
             if not isOccupancyGrid(self.prev_local_costmap_msg):
                 self.prev_local_costmap_msg = copy(self.local_costmap_msg)
             self.predict_velocities()
-            print time.time() - tic
 
 
     def globalCostmapUpdateCallback(self, msg):
@@ -96,11 +94,9 @@ class ObstaclePredictor:
         Update local costmap buffer
         '''
         if isOccupancyGrid(self.local_costmap_msg) and isOccupancyGrid(self.global_costmap_msg):
-            tic = time.time()
             updateCostmap(self.local_costmap_msg, msg)
             self.mask_costmap(self.local_costmap_msg)
             self.predict_velocities()
-            print time.time() - tic
 
 
     def predict_velocities(self):
