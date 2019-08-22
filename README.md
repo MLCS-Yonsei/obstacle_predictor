@@ -20,4 +20,5 @@ roslaunch obstacle_predictor obstacle_predictor.launch
 - ```movement_tol_min```: If predicted speed of some dynamic obstacles is slower than this parameter, those obstacles will be ignored. (default: ```0.1```)
 - ```movement_tol_max```: If predicted speed of some dynamic obstacles is faster than this parameter, those obstacles will be ignored. (default: ```0.5```)
 - ```timediff_tolerence```: If time difference between previous local costmap and current local costmap is longer than this parameter, prediction will be skipped. (default: ```2.0```)
+- ```timediff_tolerence```: If difference between forward and backward optical flow is larger than this parameter, the flow vectors will be ignored. (default: ```0.01```)
 - ```window_size```: Window size for Lucas-Kanade optical flow. (default: ```3```)
