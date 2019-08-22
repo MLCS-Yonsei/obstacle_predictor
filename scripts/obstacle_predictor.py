@@ -32,6 +32,7 @@ class ObstaclePredictor:
         self.movement_tol_min = rospy.get_param("/obstacle_predictor/movement_tol_min")
         self.prediction_horizon = rospy.get_param("/obstacle_predictor/prediction_horizon")
         self.timediff_tol = rospy.get_param("/obstacle_predictor/timediff_tol")
+        self.flowdiff_tol = rospy.get_param("/obstacle_predictor/flowdiff_tol")
         self.window_size = rospy.get_param("/obstacle_predictor/window_size")
 
         # Initialize ros node
@@ -112,10 +113,14 @@ class ObstaclePredictor:
                 # flow, rep_physics = opticalFlowLK(I2g, I1g, self.window_size)
                 # flow = -flow
                 flow = -calcOpticalFlowFarneback(I2g, I1g, None, 0.5, 3, self.window_size, 3, 5, 1.2, 0)
+                flow_ = calcOpticalFlowFarneback(I1g, I2g, None, 0.5, 3, self.window_size, 3, 5, 1.2, 0)
+                flowdiff = np.linalg.norm(flow - flow_, axis=2) > self.flowdiff_tol
+                flow[:,:,0][flowdiff] = 0
+                flow[:,:,1][flowdiff] = 0
                 # flow[:,:,0] = gaussian_filter(flow[:,:,0], 3.0)
                 # flow[:,:,1] = gaussian_filter(flow[:,:,1], 3.0)
-                flow[:,:,0] = median_filter(flow[:,:,0], 9)
-                flow[:,:,1] = median_filter(flow[:,:,1], 9)
+                flow[:,:,0] = median_filter(flow[:,:,0], self.window_size)
+                flow[:,:,1] = median_filter(flow[:,:,1], self.window_size)
         
                 # Generate and Publish ObstacleArrayMsg
                 self.publish_obstacles(flow, dt)
